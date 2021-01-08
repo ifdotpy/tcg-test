@@ -1,0 +1,13 @@
+mysql_root_password: my-secret-pw
+mysql_datadir: /mnt/mysql_volume
+mysql_databases:
+  - name: tcg_db
+    collation: utf8_general_ci
+    encoding: utf8
+    replicate: 1
+mysql_users:
+  - name: tcg_user
+    host: "%"
+    password: ""
+    priv: "tcg_db.*:ALL"
+    

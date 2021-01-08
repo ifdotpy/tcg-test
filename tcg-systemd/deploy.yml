@@ -1,0 +1,78 @@
+---
+- hosts: db
+  become: yes
+  vars_files:
+    - vars/main.yml
+  roles:
+    - { role: geerlingguy.mysql }
+
+  # this section can be deleted if MariaDB instead of MySql is OK
+  pre_tasks:
+    - name: Install an epel
+      package:
+        name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - epel-release
+
+    - name: Install PIP
+      package:
+        name:
+          - python-pip
+
+    - name: Install PyMysql
+      pip:
+        name: PyMySQL==0.7.11
+
+    - name: Setup SELinux rules
+      shell: |
+        semanage fcontext -a -t mysqld_db_t "{{ mysql_datadir }}(/.*)?"
+        restorecon -Rv {{ mysql_datadir }}
+
+    - name: Install the MySQL repo.
+      yum:
+        name: http://repo.mysql.com/mysql-community-release-el7-5.noarch.rpm
+        state: present
+  
+    - name: Override variables for MySQL (RedHat).
+      set_fact:
+        mysql_daemon: mysqld
+        mysql_packages: ['mysql-server']
+        mysql_log_error: /var/log/mysqld.log
+        mysql_syslog_tag: mysqld
+        mysql_pid_file: /var/run/mysqld/mysqld.pid
+        mysql_socket: /var/lib/mysql/mysql.sock
+
+- hosts: app
+  tasks:
+    - name: Copy package
+      ansible.posix.synchronize:
+        src: tcg.rpm
+        dest: /tmp/tcg.rpm
+      
+    - name: Install tcg rpm from a local file
+      yum:
+        name: /tmp/tcg.rpm
+        state: present
+    
+    - name: Add repository
+      yum_repository:
+        name: epel
+        description: EPEL YUM repo
+        baseurl: https://download.fedoraproject.org/pub/epel/$releasever/$basearch/
+        gpgcheck: yes
+
+    - rpm_key:
+        state: present
+        key: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-7
+
+    - yum: 
+        name: jq
+
+    - shell: |
+       jq '.server.host="0.0.0.0" | .mysql.host="{{ hostvars['db'].private_ip }}" | .log.graylog=null' /etc/tcg/tcg.config.sample.json > /etc/tcg/tcg.json
+    
+    - name: Make sure a service is running
+      systemd:
+        state: started
+        name: tcg

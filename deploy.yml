@@ -1,0 +1,82 @@
+---
+- hosts: servers
+
+  tasks:
+  
+  - name: Install an epel
+    package:
+      name:
+        - yum-utils
+        - device-mapper-persistent-data
+        - epel-release
+  
+  - name: Add Docker repo
+    get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docer-ce.repo
+    become: yes
+
+  - name: Install the required packages
+    package:
+      name:
+        - docker-ce
+        - python-pip
+        - python-setuptools
+      state: latest
+
+  - name: Ensure the docker daemon started
+    service: 
+      name: docker
+      state: started
+
+  - name: Install Docker Module for Python
+    pip:
+      name: docker
+  
+  - name: Install Jsondiff Module for Python
+    pip:
+      name: jsondiff
+    when: inventory_hostname == "app"
+    
+  - name: Init a new swarm
+    community.general.docker_swarm:
+      state: present
+      advertise_addr: "{{ private_ip }}"
+    register: swarm_info
+    when: inventory_hostname == "app"
+  
+  - name: Join the swarm
+    community.general.docker_swarm:
+      state: join
+      advertise_addr: "{{ private_ip }}"
+      join_token: "{{ hostvars['app'].swarm_info.swarm_facts.JoinTokens.Worker }}"
+      remote_addrs: [ "{{ hostvars['app'].private_ip }}" ]
+    when: inventory_hostname == "db"
+
+  - name: Add new label
+    community.general.docker_node:
+      hostname: application
+      labels:
+        purpose: app
+    when: inventory_hostname == "app"
+  
+  - name: Add new label
+    community.general.docker_node:
+      hostname: db
+      labels:
+        purpose: db
+    when: inventory_hostname == "app"
+  
+  - name: Copy compose file
+    ansible.posix.synchronize:
+      src: docker-compose.production.yml
+      dest: /opt/docker-compose.yml
+    when: inventory_hostname == "app"
+  
+  - name: Deploy stack from a compose file
+    community.general.docker_stack:
+      state: present
+      name: tcg
+      compose:
+        - /opt/docker-compose.yml
+    when: inventory_hostname == "app"

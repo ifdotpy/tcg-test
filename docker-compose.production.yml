@@ -1,0 +1,38 @@
+version: '3.8'
+
+volumes:
+  db-vol:
+
+services:
+
+  app:
+    image: iflead/tcg:latest
+    ports: # don't use in prod. if you want to serve on 80 and 443, will be better to use reverse proxy like a nginx
+      - target: 8084
+        published: 8084
+        mode: host 
+    healthcheck:
+      test: curl -f http://localhost:8084/v1/health/check
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.purpose==app
+
+  db:
+    image: mysql:8.0.22
+    volumes:
+      - /mnt/mysql_volume:/var/lib/mysql
+    environment: 
+      MYSQL_ROOT_PASSWORD: my-secret-pw
+      MYSQL_DATABASE: tcg_db
+      MYSQL_USER: tcg_user
+      MYSQL_PASSWORD: tcg_pass
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.purpose==db
